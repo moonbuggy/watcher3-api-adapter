@@ -1,0 +1,118 @@
+ARG ALPINE_VERSION="3.14"
+ARG FROM_IMAGE="moonbuggy2000/alpine-s6:${ALPINE_VERSION}"
+
+ARG BUILD_PYTHON_VERSION="3.9"
+ARG TARGET_OS="alpine"
+ARG TARGET_ARCH_TAG="amd64"
+
+ARG BUILDER_ROOT="/builder_root"
+
+ARG PUID=1000
+ARG PGID=1000
+
+# Nuitka v0.6.18 is currently incompatible with get-hints.py, so use an older
+# version that is compatible
+ARG NUITKA_VER_STRING="0.6.16.4-"
+
+## build the binary and prepare files
+#
+FROM "moonbuggy2000/nuitka:${NUITKA_VER_STRING}py${BUILD_PYTHON_VERSION}-${TARGET_OS}-${TARGET_ARCH_TAG}" AS builder
+
+# QEMU static binaries from pre_build
+ARG QEMU_DIR=""
+ARG QEMU_ARCH=""
+COPY _dummyfile "${QEMU_DIR}/qemu-${QEMU_ARCH}-static*" /usr/bin/
+
+ARG APP_PATH="/app"
+WORKDIR "${APP_PATH}"
+
+COPY ./requirements.txt ./
+
+# Python wheels from pre_build
+ARG IMPORTS_DIR=".imports"
+ARG TARGET_ARCH_TAG
+COPY _dummyfile "${IMPORTS_DIR}/${TARGET_ARCH_TAG}*" "/${IMPORTS_DIR}/"
+
+# install requirements
+# attempt to use pre-built binary wheels (from moonbuggy2000/python-musl-wheels)
+# but revert to building from source if it fails
+RUN if ! python3 -m pip install --only-binary=:all: --find-links "/${IMPORTS_DIR}/" -r requirements.txt; then \
+			echo "ERROR: Could not build with binary wheels. Attempting to build from source.."; \
+			apk add --no-cache \
+				gcc \
+				linux-headers \
+				musl-dev; \
+			python3 -m pip install --find-links "/${IMPORTS_DIR}/" -r requirements.txt; \
+		fi
+
+COPY ./watcher3-api-adapter.py ./
+COPY ./watcher3-api-adapter-nuitka-hints.json ./
+
+# hinted compilation with Nuitka
+ARG BUILD_PYTHON_VERSION
+RUN svn checkout https://github.com/Nuitka/NUITKA-Utilities/trunk/hinted-compilation . \
+	# patch hinted-mods.py \
+	&& sed -e 's|recurse_modules|follow_modules|' -i hinted-mods.py \
+	&& PYTHON_MINOR="$(echo "${BUILD_PYTHON_VERSION}" | grep -oE '^[0-9]+\.[0-9]+')" \
+	&& ln -s ./watcher3-api-adapter-nuitka-hints.json "./watcher3-api-adapter-${PYTHON_MINOR//.}-linux-64.json" \
+	&& ln -s ./watcher3-api-adapter-nuitka-hints.json "./watcher3-api-adapter-${PYTHON_MINOR//.}-linux-32.json"
+
+RUN python3 nuitka-hints.py --plugin-enable=pylint-warnings --output-dir="${BUILDER_ROOT}${APP_PATH}" watcher3-api-adapter.py
+
+RUN mkdir ./watcher3-api-adapter.dist/keys \
+	&& mkdir ./watcher3-api-adapter.dist/conf
+
+# organize files
+ARG BUILDER_ROOT
+RUN mkdir -p "${BUILDER_ROOT}" \
+	&& mv watcher3-api-adapter.dist "${BUILDER_ROOT}${APP_PATH}"
+
+WORKDIR "${BUILDER_ROOT}"
+
+COPY ./watcher3-api-adapter.conf ".${APP_PATH}/conf/"
+COPY ./root/ ./
+
+RUN echo "APP_PATH=${APP_PATH}" >> "${BUILDER_ROOT}/etc/contenv_extra"
+
+
+## build the image
+#
+FROM "${FROM_IMAGE}" AS builder-final
+
+# QEMU static binaries from pre_build
+ARG QEMU_DIR=""
+ARG QEMU_ARCH=""
+COPY _dummyfile "${QEMU_DIR}/qemu-${QEMU_ARCH}-static*" /usr/bin/
+
+ARG PUID
+ARG PGID
+
+# Install packages
+RUN apk --update add --no-cache \
+		shadow \
+	# Add user and group \
+	&& addgroup -g ${PGID} adapter \
+	&& adduser -DH -u ${PUID} -G adapter adapter
+
+# Remove QEMU binaries
+RUN rm -f "/usr/bin/qemu-${QEMU_ARCH}-static" >/dev/null 2>&1
+
+ARG BUILDER_ROOT
+COPY --from=builder "${BUILDER_ROOT}/" /
+
+
+## drop QEMU static binaries
+#
+FROM "moonbuggy2000/scratch:${TARGET_ARCH_TAG}"
+
+ARG PUID
+ARG PGID
+
+ENV PUID="${PUID}" \
+		PGID="${PGID}"
+
+COPY --from=builder-final / /
+
+HEALTHCHECK --start-period=5s --timeout=10s CMD /healthcheck.sh
+
+ENTRYPOINT ["/init"]

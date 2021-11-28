@@ -1,0 +1,33 @@
+#!/usr/bin/with-contenv /bin/sh
+#shellcheck shell=sh
+
+CONFIG_FILE="${APP_PATH}/conf/watcher3-api-adapter.conf"
+
+if env | grep -q 'WAA_'; then
+  [ ! -z "${WAA_PORT}" ] \
+    && { sed -i "s|^port.*|port=${WAA_PORT}|" ${CONFIG_FILE}; } \
+		|| sed -i "s|^port.*|port=8080|" ${CONFIG_FILE}
+
+  [ ! -z "${WAA_WATCHER3_HOST}" ] \
+    && sed -i "s|^watcher3_host.*|watcher3_host=${WAA_WATCHER3_HOST}|" ${CONFIG_FILE} \
+    || { echo "ERROR: No Watcher3 host address specified|"; }
+
+    [ ! -z "${WAA_WATCHER3_PORT}" ] \
+      && sed -i "s|^watcher3_port.*|watcher3_port=${WAA_WATCHER3_PORT}|" ${CONFIG_FILE} \
+  		|| sed -i "s|^watcher3_port.*|watcher3_port=80|" ${CONFIG_FILE}
+
+    [ ! -z "${WAA_WATCHER3_SCHEME}" ] \
+      && sed -i "s|^watcher3_scheme.*|watcher3_scheme=${WAA_WATCHER3_SCHEME}|" ${CONFIG_FILE} \
+  		|| sed -i "s|^watcher3_scheme.*|watcher3_scheme=http|" ${CONFIG_FILE}
+
+    [ ! -z "${WAA_WATCHER3_APIKEY}" ] \
+      && sed -i "s|^watcher3_apikey.*|watcher3_apikey=${WAA_WATCHER3_APIKEY}|" ${CONFIG_FILE}
+
+    [ ! -z "${WAA_WATCHER3_SSL_CERT}" ] \
+      && sed -i "s|^watcher3_ssl_cert.*|watcher3_ssl_cert=${WAA_WATCHER3_SSL_CERT}|" ${CONFIG_FILE}
+
+    [ ! -z "${WAA_WATCHER3_SSL_VERIFY}" ] \
+      && sed -i "s|^watcher3_ssl_verify.*|watcher3_ssl_verify=${WAA_WATCHER3_SSL_VERIFY}|" ${CONFIG_FILE}
+fi
+
+sed -i "s|^ready_fd.*|ready_fd=5|" $CONFIG_FILE

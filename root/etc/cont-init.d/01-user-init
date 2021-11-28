@@ -1,0 +1,12 @@
+#!/usr/bin/with-contenv /bin/sh
+# shellcheck shell=sh
+
+# set PUID and PGID for www-data user/group
+#
+PUID=${PUID:-1000}
+PGID=${PGID:-1000}
+
+echo "[${0##*/}] uid: ${PUID}, gid: ${PGID}"
+
+groupmod -o -g "$PGID" adapter
+usermod -o -u "$PUID" -g "$PGID" adapter

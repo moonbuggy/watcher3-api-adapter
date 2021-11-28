@@ -1,0 +1,15 @@
+#!/usr/bin/with-contenv /bin/sh
+#shellcheck shell=sh
+
+DEBUG_STRING=''
+
+if [ ! -z ${WAA_DEBUG+set} ]; then
+	case ${WAA_DEBUG} in
+		true|True)
+			DEBUG_STRING='--debug'
+			;;
+	esac
+fi
+
+exec \
+	s6-setuidgid adapter ${APP_PATH}/watcher3-api-adapter -c ${APP_PATH}/conf/watcher3-api-adapter.conf ${DEBUG_STRING}

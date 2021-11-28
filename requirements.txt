@@ -1,0 +1,4 @@
+bottle==0.12.19
+psutil==5.8.0
+requests==2.26.0
+waitress==2.0.0
